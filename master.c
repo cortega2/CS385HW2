@@ -40,8 +40,8 @@ int main(int argc, char* argv[]){
 	//Parent
 	if(child > 0){
 		int savedSTDOUT = dup(1);
-		char buff[80];
-		char readBuff[80];
+		char buff[256];
+		char readBuff[256];
 
 		//char* testB = "1\n10\n3\n";
 
@@ -55,36 +55,29 @@ int main(int argc, char* argv[]){
 			
 		close(pipe1[0]);					//Not reading from pipe1
 		close(pipe2[1]);					//Not writing to pipe2
-		dup2(pipe2[0], 0);
-		dup2(pipe1[1], 1);
 		
 		write(pipe1[1], buff, strlen(buff));
 		close(pipe1[1]);
 		
 		while(read(pipe2[0], readBuff, sizeof(readBuff)) != 0){
 		}
-
 		close(pipe2[0]);
+		
 		wait(NULL);
-	
-		dup2(savedSTDOUT, 1);				//restore stdout
-		close(savedSTDOUT);
 		printf("\nReading:\n%s", readBuff);
 	}
 	//child
 	else if(child == 0){
-	
 		close(pipe1[1]);					//Not writing to pipe1
 		close(pipe2[0]);					//Not reading from pipe2
 		
 		dup2(pipe1[0], 0);
 		close(pipe1[0]);
-				
 		dup2(pipe2[1], 1);
 		dup2(pipe2[1], 2);	
 		close(pipe2[1]);
 		
-		execlp("sort", "aort", "-nr", NULL);
+		execlp("sort", "sort", "-nr",NULL);
 		printf("Something bad happened\n");
 		return;
 	}
