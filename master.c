@@ -1,3 +1,4 @@
+#include "worker.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -9,7 +10,27 @@
 #include <sys/ipc.h>
 
 //for message queue
-#define MSG_RW 0600;
+#define MSG_RW 0600
+
+int rmv(int id){
+	char theID[80];
+	sprintf(theID, "%d", id);
+	pid_t child;
+	child = fork();
+	//something bad happened
+	if(child < 0){
+		printf("ERROR FORKING\n");
+		return -1;
+	}
+	//child
+	else if(child == 0){
+		execlp("ipcrm","ipcrm", "-q",theID, NULL);
+		printf("IPCRM failed\n");
+		return -1;
+	}
+	wait(NULL);
+	return 0;
+}
 
 int main(int argc, char* argv[]){
 	if(argc<7){
@@ -20,6 +41,7 @@ int main(int argc, char* argv[]){
 	int sleepMax = atoi(argv[4]);
 	int sleepMin = atoi(argv[3]);
 	int nWorkers = atoi(argv[2]);
+	char readBuff[256];
 	
 	if(randSeed == 0)
 		srand(time(NULL));
@@ -45,7 +67,6 @@ int main(int argc, char* argv[]){
 	if(child > 0){
 		int savedSTDOUT = dup(1);
 		char buff[256];
-		char readBuff[256];
 
 		//char* testB = "1\n10\n3\n";
 
@@ -91,14 +112,66 @@ int main(int argc, char* argv[]){
 		return -1;
 	}
 	
+	//seperate sleep time using strtok and convert them to ints to be stored
+	int i = 0;
+	char* tmp = NULL;
+	int sleepTimes[nWorkers];
+	tmp = strtok(readBuff, "\n");
+	while(tmp != NULL){
+		sleepTimes[i] = atoi(tmp);
+		tmp = strtok(NULL, "\n");
+		i++;
+	}
+	
 	//Part 2: Create message queue and fork of workers to write messages to the message queue
-	int msgID;
-	msgID = msgget(IPC_PRIVATE, MSG_RW | IPC_CREAT);
+	int msgID = msgget(IPC_PRIVATE, 0600);
 	if(msgID == -1){
 		printf("msgget error\n");
 		return -1;
 	}
+	else
+		printf("Created a MSG queue, ID: %d\n", msgID);
+
+	pid_t workersPIDs[nWorkers];
+	char mID[80];
+	sprintf(mID, "%d", msgID);
+	char shmID[80] = "000";							//CHANGE LATER TO SOMETHING ELSE
+	char semID[80] = "000";							//CHANGE LATER TO SOMETHING ELSE
+	for(i = 0; i < nWorkers; i++){
+		char workerID[80];
+		char sleepT[80];
+		workersPIDs[i] = fork();
+		sprintf(workerID, "%d", i);
+		sprintf(sleepT, "%d", sleepTimes[i]);	
+		
+		//Parent
+		if(workersPIDs[i] >0 ){
+		}
+		//Child
+		else if(workersPIDs[i] == 0){
+			execlp("./worker.out", "./worker.out", workerID, argv[1], sleepT, mID, shmID, semID, NULL);
+		}
+		//something bad happened
+		else{
+			printf("Something bad happened when forking!\n");
+			return -1;
+		}
+	}
+
+	//Read messages from the children workers
+	for(i = 0; i< nWorkers; i++){
+		struct message rMessage;
+		if(msgrcv(msgID, &rMessage, sizeof(struct message) - sizeof(long int), HELLO, 0) < 0){
+			printf("ERROR RECIEVING MESSAGE\n");
+			return -1;
+		}
+		printf("Message from worker[%d]\nSleep Time:%d\n", rMessage.workerID, rMessage.sleepTime);
+	}
+	rmv(msgID);
+	//wait for the children workers
+	for(i = 0; i< nWorkers; i++)
+		wait(NULL);
 	
-	
+	printf("DONE WAITING\n");
 			
 }
