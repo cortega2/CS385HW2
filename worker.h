@@ -2,11 +2,11 @@
 #define WORKER_H_INCLUDED
 
 struct message{
-	int type;
+	long int type;
 	int workerID;
 	int sleepTime;
 };
-const int HELLO = 1;
-const int BYE = 0;
+const long int HELLO = 1;
+const long int BYE = 0;
 
 #endif
