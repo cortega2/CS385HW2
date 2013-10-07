@@ -6,6 +6,10 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/ipc.h>
+
+//for message queue
+#define MSG_RW 0600;
 
 int main(int argc, char* argv[]){
 	if(argc<7){
@@ -85,5 +89,16 @@ int main(int argc, char* argv[]){
 	else{
 		printf("Fork failed!\n");
 		return -1;
-	}		
+	}
+	
+	//Part 2: Create message queue and fork of workers to write messages to the message queue
+	int msgID;
+	msgID = msgget(IPC_PRIVATE, MSG_RW | IPC_CREAT);
+	if(msgID == -1){
+		printf("msgget error\n");
+		return -1;
+	}
+	
+	
+			
 }
