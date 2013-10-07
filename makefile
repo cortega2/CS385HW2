@@ -4,7 +4,7 @@ CFLAGS= -Wall
 
 all: master.out worker.out
 
-master.out: master.c
+master.out: master.c worker.h
 	gcc master.c -o master.out
 
 worker.out: worker.c worker.h
