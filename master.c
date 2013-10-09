@@ -38,8 +38,8 @@ int main(int argc, char* argv[]){
 		return -1;
 	}
 	int randSeed = atoi(argv[5]);
-	int sleepMax = atoi(argv[4]);
-	int sleepMin = atoi(argv[3]);
+	float sleepMax = atof(argv[4]);
+	float sleepMin = atof(argv[3]);
 	int nWorkers = atoi(argv[2]);
 	char readBuff[256];
 	
@@ -68,12 +68,14 @@ int main(int argc, char* argv[]){
 		int savedSTDOUT = dup(1);
 		char buff[256];
 
-		//char* testB = "1\n10\n3\n";
-
 		int t;
 		int b=0;
 		for(t =0; t < nWorkers; t++){
-			int b2 = sprintf(buff + b, "%d\n", (rand() % sleepMax + sleepMin));
+			float r = (float)rand() / (float)RAND_MAX;
+    			float diff = sleepMax - sleepMin;
+	    		r = r * diff;
+			r = sleepMin + r;
+			int b2 = sprintf(buff + b, "%f\n", r);
 			b = b + b2;
 		}
 		printf("%s", buff);
@@ -112,16 +114,18 @@ int main(int argc, char* argv[]){
 		return -1;
 	}
 	
-	//seperate sleep time using strtok and convert them to ints to be stored
+	//seperate sleep time using strtok and convert them to floats to be stored
 	int i = 0;
 	char* tmp = NULL;
-	int sleepTimes[nWorkers];
+	float sleepTimes[nWorkers];
 	tmp = strtok(readBuff, "\n");
 	while(tmp != NULL){
-		sleepTimes[i] = atoi(tmp);
+		sleepTimes[i] = atof(tmp);
 		tmp = strtok(NULL, "\n");
 		i++;
 	}
+
+
 	
 	//Part 2: Create message queue and fork of workers to write messages to the message queue
 	int msgID = msgget(IPC_PRIVATE, 0600);
@@ -142,8 +146,10 @@ int main(int argc, char* argv[]){
 		char sleepT[80];
 		workersPIDs[i] = fork();
 		sprintf(workerID, "%d", i);
-		sprintf(sleepT, "%d", sleepTimes[i]);	
+		sprintf(sleepT, "%f", sleepTimes[i]);	
 		
+		//printf("%s\n", sleepT);
+			
 		//Parent
 		if(workersPIDs[i] >0 ){
 		}
@@ -165,7 +171,7 @@ int main(int argc, char* argv[]){
 			printf("ERROR RECIEVING MESSAGE\n");
 			return -1;
 		}
-		printf("Message from worker[%d]\nSleep Time:%d\n", rMessage.workerID, rMessage.sleepTime);
+		printf("Message from worker[%d]\nSleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
 	}
 	rmv(msgID);
 	//wait for the children workers
@@ -174,4 +180,6 @@ int main(int argc, char* argv[]){
 	
 	printf("DONE WAITING\n");
 			
+
+
 }

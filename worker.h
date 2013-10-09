@@ -4,7 +4,7 @@
 struct message{
 	long int type;
 	int workerID;
-	int sleepTime;
+	float sleepTime;
 };
 const long int HELLO = 1;
 const long int BYE = 0;
