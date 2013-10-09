@@ -10,11 +10,15 @@
 #include <sys/ipc.h>
 
 //for message queue
-#define MSG_RW 0600
+#define MSG_RW 0600 | IPC_CREAT
 
-int rmv(int id){
+int rmv(int idm, int toRMV){
+	char *qs = NULL;
+	if(toRMV == 0) qs =	"-q";		//remove queue
+	else qs = "-m";				//remove shared mem
+
 	char theID[80];
-	sprintf(theID, "%d", id);
+	sprintf(theID, "%d", idm);
 	pid_t child;
 	child = fork();
 	//something bad happened
@@ -24,7 +28,7 @@ int rmv(int id){
 	}
 	//child
 	else if(child == 0){
-		execlp("ipcrm","ipcrm", "-q",theID, NULL);
+		execlp("ipcrm","ipcrm", qs,theID, NULL);
 		printf("IPCRM failed\n");
 		return -1;
 	}
@@ -128,14 +132,30 @@ int main(int argc, char* argv[]){
 
 	
 	//Part 2: Create message queue and fork of workers to write messages to the message queue
-	int msgID = msgget(IPC_PRIVATE, 0600);
+	int msgID = msgget(IPC_PRIVATE, MSG_RW);
 	if(msgID == -1){
 		printf("msgget error\n");
 		return -1;
 	}
 	else
 		printf("Created a MSG queue, ID: %d\n", msgID);
+	
+	//Part 3: Create and test shared memory
+	int shmArray[nWorkers];							//Figure out if there is a better way to do this
+	int shrMemID = shmget(IPC_PRIVATE, sizeof(shmArray), MSG_RW);
+	if(shrMemID == -1){
+		printf("shmget error\n");
+		return -1;
+	}
+	else
+		printf("Created SHR_MEM, ID: %d\n", shrMemID);
 
+	//Initialize shared array
+	int *sharedArray = (int *) shmat(shrMemID, 0, 0);
+	for(i = 0; i<nWorkers; i++)
+		sharedArray[i] = 0;
+	printf("%d\n", sharedArray[0]);
+	
 	pid_t workersPIDs[nWorkers];
 	char mID[80];
 	sprintf(mID, "%d", msgID);
@@ -173,7 +193,11 @@ int main(int argc, char* argv[]){
 		}
 		printf("Message from worker[%d]\nSleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
 	}
-	rmv(msgID);
+	rmv(msgID, 0);
+	shmdt(sharedArray);
+	shmctl(shrMemID, IPC_RMID, NULL);
+
+	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	//wait for the children workers
 	for(i = 0; i< nWorkers; i++)
 		wait(NULL);
