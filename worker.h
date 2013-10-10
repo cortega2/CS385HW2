@@ -6,7 +6,7 @@ struct message{
 	int workerID;
 	float sleepTime;
 };
-const long int HELLO = 1;
-const long int BYE = 0;
+const long int HELLO = 2;
+const long int BYE = 1;
 
 #endif

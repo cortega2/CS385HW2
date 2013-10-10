@@ -45,6 +45,7 @@ int main(int argc, char* argv[]){
 	float sleepMax = atof(argv[4]);
 	float sleepMin = atof(argv[3]);
 	int nWorkers = atoi(argv[2]);
+	int nBuffers = atoi(argv[1]);
 	char readBuff[256];
 	
 	if(randSeed == 0)
@@ -141,7 +142,7 @@ int main(int argc, char* argv[]){
 		printf("Created a MSG queue, ID: %d\n", msgID);
 	
 	//Part 3: Create and test shared memory
-	int shmArray[nWorkers];							//Figure out if there is a better way to do this
+	int shmArray[nBuffers];							//Figure out if there is a better way to do this
 	int shrMemID = shmget(IPC_PRIVATE, sizeof(shmArray), MSG_RW);
 	if(shrMemID == -1){
 		printf("shmget error\n");
@@ -152,14 +153,14 @@ int main(int argc, char* argv[]){
 
 	//Initialize shared array
 	int *sharedArray = (int *) shmat(shrMemID, 0, 0);
-	for(i = 0; i<nWorkers; i++)
+	for(i = 0; i<nBuffers; i++)
 		sharedArray[i] = 0;
-	printf("%d\n", sharedArray[0]);
 	
 	pid_t workersPIDs[nWorkers];
 	char mID[80];
 	sprintf(mID, "%d", msgID);
-	char shmID[80] = "000";							//CHANGE LATER TO SOMETHING ELSE
+	char shmID[80];
+	sprintf(shmID, "%d", shrMemID);
 	char semID[80] = "000";							//CHANGE LATER TO SOMETHING ELSE
 	for(i = 0; i < nWorkers; i++){
 		char workerID[80];
@@ -188,19 +189,32 @@ int main(int argc, char* argv[]){
 	for(i = 0; i< nWorkers; i++){
 		struct message rMessage;
 		if(msgrcv(msgID, &rMessage, sizeof(struct message) - sizeof(long int), HELLO, 0) < 0){
-			printf("ERROR RECIEVING MESSAGE\n");
+			printf("ERROR RECIEVING START MESSAGE\n");
 			return -1;
 		}
-		printf("Message from worker[%d]\nSleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
+		printf("Start message from worker[%d]\nSleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
+
+		struct message endMessage;
+		if(msgrcv(msgID, &endMessage, sizeof(struct message) - sizeof(long int), BYE, 0) < 0){
+			printf("ERROR RECIEVING END MESSAGE\n");
+			return -1;
+		}
+		printf("End message from worker[%d]\nSleep Time:%f\n\n", endMessage.workerID, endMessage.sleepTime);
 	}
+
+	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
+	//wait for the children workers
+	for(i = 0; i< nWorkers; i++){
+		wait(NULL);
+	}
+	
+	for(i = 0; i< nBuffers; i++)
+		printf("in Buffer[%d]: %d\n", i, sharedArray[i]);
+	
 	rmv(msgID, 0);
 	shmdt(sharedArray);
 	shmctl(shrMemID, IPC_RMID, NULL);
-
-	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	//wait for the children workers
-	for(i = 0; i< nWorkers; i++)
-		wait(NULL);
 	
 	printf("DONE WAITING\n");
 			
