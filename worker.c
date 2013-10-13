@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 //parameters workerID nBuffers sleepTie msgID shmID semID
 int main(int argc, char* argv[]){
@@ -20,13 +21,56 @@ int main(int argc, char* argv[]){
 
 	int shmID = atoi(argv[5]);
 	int msgID = atoi(argv[4]);
+	int nBuffers = atoi(argv[2]);
+	int workerID = atoi(argv[1]);
+	unsigned int usecs = atof(argv[3]) * 1000000;
 	
 	if(msgsnd(msgID, &start, sizeof(struct message) - sizeof(long int), IPC_NOWAIT) < 0){
 		printf("ERROR SENDING START MESSAGE!\n");
 		exit(1);
-	}	
+	}
+	
 	int *sharedArray = (int *) shmat(shmID, 0, 0);
-	sharedArray[end.workerID] = end.workerID;
+	int location = workerID;
+	int read = 0;
+	int i;
+	int q;
+	for(i = 0; i < nBuffers; i++){				//will write nBuffers times
+		for(q = 0; q<workerID - 1; q++ ){			//will read workerID-1 times per write 
+			//READ
+			read = sharedArray[location];
+			//WAIT
+			usleep(usecs);
+			//READ AGAIN
+			int read2 = sharedArray[location];
+			if(read2 != read){ 	//send message if vals are different
+				struct message change;
+				change.type = CHANGE;
+				change.workerID = atoi(argv[1]);
+				change.changedBuffer = location;
+				change.initVal = read;
+				change.finalVal = read2;
+				if(msgsnd(msgID, &change, sizeof(struct message) - sizeof(long int), IPC_NOWAIT) < 0){
+					printf("ERROR SENDING CHANGE MESSAGE!\n");
+					exit(1);
+				}	
+			}			
+			//update biffer location
+			location = location + workerID;
+			if(location >= nBuffers)
+				location = location - (nBuffers);
+		}
+		read = sharedArray[location];
+		//WAIT
+		usleep(usecs);
+		read = read | (1<<(workerID - 1));
+		sharedArray[location] = read;
+		
+		location = location + workerID;
+		if(location >= nBuffers)
+			location = location - (nBuffers);			
+	}
+	
 	if(msgsnd(msgID, &end, sizeof(struct message) - sizeof(long int), IPC_NOWAIT) < 0){
 		printf("ERROR SENDING END MESSAGE!\n");
 		exit(1);

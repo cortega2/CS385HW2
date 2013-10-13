@@ -83,8 +83,6 @@ int main(int argc, char* argv[]){
 			int b2 = sprintf(buff + b, "%f\n", r);
 			b = b + b2;
 		}
-		printf("%s", buff);
-			
 		close(pipe1[0]);					//Not reading from pipe1
 		close(pipe2[1]);					//Not writing to pipe2
 		
@@ -94,9 +92,7 @@ int main(int argc, char* argv[]){
 		while(read(pipe2[0], readBuff, sizeof(readBuff)) != 0){
 		}
 		close(pipe2[0]);
-		
 		wait(NULL);
-		printf("\nReading:\n%s", readBuff);
 	}
 	//child
 	else if(child == 0){
@@ -166,7 +162,7 @@ int main(int argc, char* argv[]){
 		char workerID[80];
 		char sleepT[80];
 		workersPIDs[i] = fork();
-		sprintf(workerID, "%d", i);
+		sprintf(workerID, "%d", i+1);
 		sprintf(sleepT, "%f", sleepTimes[i]);	
 		
 		//printf("%s\n", sleepT);
@@ -185,33 +181,37 @@ int main(int argc, char* argv[]){
 		}
 	}
 
-	//Read messages from the children workers
-	for(i = 0; i< nWorkers; i++){
+	//Read messages from the children workers and wait if received end message
+	i = nWorkers;
+	while(i){
 		struct message rMessage;
-		if(msgrcv(msgID, &rMessage, sizeof(struct message) - sizeof(long int), HELLO, 0) < 0){
+		if(msgrcv(msgID, &rMessage, sizeof(struct message) - sizeof(long int), 0, 0) < 0){
 			printf("ERROR RECIEVING START MESSAGE\n");
 			return -1;
 		}
-		printf("Start message from worker[%d]\nSleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
-
-		struct message endMessage;
-		if(msgrcv(msgID, &endMessage, sizeof(struct message) - sizeof(long int), BYE, 0) < 0){
-			printf("ERROR RECIEVING END MESSAGE\n");
-			return -1;
+		if(rMessage.type == HELLO)
+			printf("Start message from worker[%d]	Sleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
+		if(rMessage.type == CHANGE){
+			printf("Worker[%d] reports change in Buffer[%d]\nInitial:%d   Final:%d\n\n", 
+				rMessage.workerID, rMessage.changedBuffer, rMessage.initVal, rMessage.finalVal);
 		}
-		printf("End message from worker[%d]\nSleep Time:%f\n\n", endMessage.workerID, endMessage.sleepTime);
+		else if(rMessage.type == BYE){
+			printf("End message from worker[%d]	Sleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
+			i--;
+			wait(NULL);
+		}
 	}
 
-	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	
-	//wait for the children workers
-	for(i = 0; i< nWorkers; i++){
-		wait(NULL);
-	}
-	
+	//Print out the contents of the buffer
+	int expVal = 0;
+	for(i =0; i < nWorkers; i++)
+		expVal = expVal | (1<<i);
+
+	printf("Expected Val: %d\n", expVal);
 	for(i = 0; i< nBuffers; i++)
 		printf("in Buffer[%d]: %d\n", i, sharedArray[i]);
 	
+	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	rmv(msgID, 0);
 	shmdt(sharedArray);
 	shmctl(shrMemID, IPC_RMID, NULL);
