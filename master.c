@@ -8,35 +8,19 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/ipc.h>
+#include <sys/sem.h>
 
 //for message queue
 #define MSG_RW 0600 | IPC_CREAT
-
-int rmv(int idm, int toRMV){
-	char *qs = NULL;
-	if(toRMV == 0) qs =	"-q";		//remove queue
-	else qs = "-m";				//remove shared mem
-
-	char theID[80];
-	sprintf(theID, "%d", idm);
-	pid_t child;
-	child = fork();
-	//something bad happened
-	if(child < 0){
-		printf("ERROR FORKING\n");
-		return -1;
-	}
-	//child
-	else if(child == 0){
-		execlp("ipcrm","ipcrm", qs,theID, NULL);
-		printf("IPCRM failed\n");
-		return -1;
-	}
-	wait(NULL);
-	return 0;
-}
+union semun{
+	int val;
+	struct semid_ds *buf;
+	unsigned short *array;
+};
 
 int main(int argc, char* argv[]){
+	printf("Carlos Ortega	corteg20\n");	
+
 	if(argc<7){
 		printf("Not enought arguments\n");
 		return -1;
@@ -46,6 +30,7 @@ int main(int argc, char* argv[]){
 	float sleepMin = atof(argv[3]);
 	int nWorkers = atoi(argv[2]);
 	int nBuffers = atoi(argv[1]);
+	int numSems = atoi(argv[6]);
 	char readBuff[256];
 	
 	if(randSeed == 0)
@@ -144,28 +129,45 @@ int main(int argc, char* argv[]){
 		printf("shmget error\n");
 		return -1;
 	}
-	else
+	else{
 		printf("Created SHR_MEM, ID: %d\n", shrMemID);
+	}
 
 	//Initialize shared array
 	int *sharedArray = (int *) shmat(shrMemID, 0, 0);
 	for(i = 0; i<nBuffers; i++)
 		sharedArray[i] = 0;
+
 	
+
+	//Part 5: create Semaphores
+	int intSemID = 0;
+	intSemID = semget(IPC_PRIVATE, nBuffers, MSG_RW);
+	union semun semUnion;
+	semUnion.val = 1;
+	
+	for(i =0; i < nBuffers; i++)
+		semctl(intSemID, i, SETVAL, semUnion);
+		
+	//Fork of the workers	
 	pid_t workersPIDs[nWorkers];
 	char mID[80];
 	sprintf(mID, "%d", msgID);
 	char shmID[80];
 	sprintf(shmID, "%d", shrMemID);
-	char semID[80] = "000";							//CHANGE LATER TO SOMETHING ELSE
+	
+	char semID[80];
+	if(numSems > 0)
+		sprintf(semID, "%d", intSemID);
+	else
+		sprintf(semID, "%d", 0);
+	
 	for(i = 0; i < nWorkers; i++){
 		char workerID[80];
 		char sleepT[80];
 		workersPIDs[i] = fork();
 		sprintf(workerID, "%d", i+1);
 		sprintf(sleepT, "%f", sleepTimes[i]);	
-		
-		//printf("%s\n", sleepT);
 			
 		//Parent
 		if(workersPIDs[i] >0 ){
@@ -180,7 +182,6 @@ int main(int argc, char* argv[]){
 			return -1;
 		}
 	}
-
 	//Read messages from the children workers and wait if received end message
 	i = nWorkers;
 	while(i){
@@ -192,8 +193,16 @@ int main(int argc, char* argv[]){
 		if(rMessage.type == HELLO)
 			printf("Start message from worker[%d]	Sleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
 		if(rMessage.type == CHANGE){
-			printf("Worker[%d] reports change in Buffer[%d]\nInitial:%d   Final:%d\n\n", 
+			int change = rMessage.initVal ^ rMessage.finalVal;
+			printf("Worker[%d] reports change in Buffer[%d]\nInitial:%d   Final:%d	Bad bits:", 
 				rMessage.workerID, rMessage.changedBuffer, rMessage.initVal, rMessage.finalVal);
+			
+			int q;	
+			for(q = 0; q<nWorkers; q++){
+				if(change & (1<<q))
+					printf("%d	", q);
+			}
+			printf("\n\n");
 		}
 		else if(rMessage.type == BYE){
 			printf("End message from worker[%d]	Sleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
@@ -201,23 +210,31 @@ int main(int argc, char* argv[]){
 			wait(NULL);
 		}
 	}
-
-	//Print out the contents of the buffer
-	int expVal = 0;
-	for(i =0; i < nWorkers; i++)
-		expVal = expVal | (1<<i);
-
-	printf("Expected Val: %d\n", expVal);
-	for(i = 0; i< nBuffers; i++)
-		printf("in Buffer[%d]: %d\n", i, sharedArray[i]);
 	
-	//rmv(shrMemID, 1);					//MIGHT NOT BE NEEDED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	rmv(msgID, 0);
+	//Print out the contents of the buffer
+	int expVal = (1 << nWorkers)-1;
+
+	printf("\nExpected Val: %d\n", expVal);
+	int q;
+	for(i = 0; i< nBuffers; i++){
+		if(sharedArray[i] != expVal){
+			int change = sharedArray[i] ^ expVal;
+			printf("Write Error in Buffer[%d]=%d     Bad bits:", i, sharedArray[i]);
+			for(q = 0; q<nWorkers; q++){
+				if(change & (1<<q))
+					printf("%d    ", q);
+			}
+			printf("\n");
+		}
+	}
+	
 	shmdt(sharedArray);
 	shmctl(shrMemID, IPC_RMID, NULL);
+	msgctl(msgID, IPC_RMID, NULL);
+	semctl(intSemID, nBuffers, IPC_RMID);
+	
 	
 	printf("DONE WAITING\n");
-			
-
+	
 
 }
