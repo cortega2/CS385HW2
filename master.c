@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include <sys/msg.h>
+#include <sys/shm.h>
+#include <time.h>
 
 //for message queue
 #define MSG_RW 0600 | IPC_CREAT
@@ -30,7 +33,6 @@ int main(int argc, char* argv[]){
 	float sleepMin = atof(argv[3]);
 	int nWorkers = atoi(argv[2]);
 	int nBuffers = atoi(argv[1]);
-	int numSems = atoi(argv[6]);
 	char readBuff[256];
 	
 	if(randSeed == 0)
@@ -55,7 +57,6 @@ int main(int argc, char* argv[]){
 	child = fork();
 	//Parent
 	if(child > 0){
-		int savedSTDOUT = dup(1);
 		char buff[256];
 
 		int t;
@@ -91,8 +92,8 @@ int main(int argc, char* argv[]){
 		close(pipe2[1]);
 		
 		execlp("sort", "sort", "-nr",NULL);
-		printf("Something bad happened\n");
-		return;
+		perror("Something bad happened\n");
+		return -1;
 	}
 	//something bad happened
 	else{
@@ -149,32 +150,38 @@ int main(int argc, char* argv[]){
 	for(i =0; i < nBuffers; i++)
 		semctl(intSemID, i, SETVAL, semUnion);
 		
-	//Fork of the workers	
+	//----------------------------------->Fork of the workers<------------------------------------------//
 	pid_t workersPIDs[nWorkers];
-	char mID[80];
+	char mID[80];											//message queue id sent to workers				
 	sprintf(mID, "%d", msgID);
-	char shmID[80];
+	char shmID[80];										//shared mem id sent to workers
 	sprintf(shmID, "%d", shrMemID);
 	
-	char semID[80];
-	if(numSems > 0)
-		sprintf(semID, "%d", intSemID);
-	else
-		sprintf(semID, "%d", 0);
+	char semID[80];										//semaphore id sent to workers
+	sprintf(semID, "%d", intSemID);
 	
 	for(i = 0; i < nWorkers; i++){
-		char workerID[80];
+		char workerID[80];									
 		char sleepT[80];
 		workersPIDs[i] = fork();
-		sprintf(workerID, "%d", i+1);
-		sprintf(sleepT, "%f", sleepTimes[i]);	
+		sprintf(workerID, "%d", i+1);							//workerId sent to worker
+		sprintf(sleepT, "%f", sleepTimes[i]);					//sleeptime sent to worker
 			
 		//Parent
 		if(workersPIDs[i] >0 ){
 		}
 		//Child
 		else if(workersPIDs[i] == 0){
-			execlp("./worker.out", "./worker.out", workerID, argv[1], sleepT, mID, shmID, semID, NULL);
+			if( (int)atoi(argv[6]) > 0 ){
+				execlp("./worker.out", "./worker.out", workerID, argv[1], sleepT, mID, shmID, semID, NULL);
+				perror("exec failed");
+				return -1;
+			}
+			else{
+				execlp("./worker.out", "./worker.out", workerID, argv[1], sleepT, mID, shmID, NULL);
+				perror("exec failed");
+				return -1;
+			}
 		}
 		//something bad happened
 		else{
@@ -182,8 +189,10 @@ int main(int argc, char* argv[]){
 			return -1;
 		}
 	}
-	//Read messages from the children workers and wait if received end message
+
+	//Read messages from the children workers, count each read error, and wait if received end message
 	i = nWorkers;
+	int readErrors = 0;
 	while(i){
 		struct message rMessage;
 		if(msgrcv(msgID, &rMessage, sizeof(struct message) - sizeof(long int), 0, 0) < 0){
@@ -193,10 +202,12 @@ int main(int argc, char* argv[]){
 		if(rMessage.type == HELLO)
 			printf("Start message from worker[%d]	Sleep Time:%f\n", rMessage.workerID, rMessage.sleepTime);
 		if(rMessage.type == CHANGE){
+			readErrors ++;
 			int change = rMessage.initVal ^ rMessage.finalVal;
 			printf("Worker[%d] reports change in Buffer[%d]\nInitial:%d   Final:%d	Bad bits:", 
 				rMessage.workerID, rMessage.changedBuffer, rMessage.initVal, rMessage.finalVal);
 			
+			//print changed bits
 			int q;	
 			for(q = 0; q<nWorkers; q++){
 				if(change & (1<<q))
@@ -211,13 +222,15 @@ int main(int argc, char* argv[]){
 		}
 	}
 	
-	//Print out the contents of the buffer
+	//Print the errors and the numer of type of errors
 	int expVal = (1 << nWorkers)-1;
-
-	printf("\nExpected Val: %d\n", expVal);
+	int writeErrors = 0;
 	int q;
+	printf("\nExpected Val: %d\n", expVal);
+
 	for(i = 0; i< nBuffers; i++){
 		if(sharedArray[i] != expVal){
+			writeErrors ++;
 			int change = sharedArray[i] ^ expVal;
 			printf("Write Error in Buffer[%d]=%d     Bad bits:", i, sharedArray[i]);
 			for(q = 0; q<nWorkers; q++){
@@ -227,14 +240,12 @@ int main(int argc, char* argv[]){
 			printf("\n");
 		}
 	}
-	
+	printf("Number of READ errors: %d\nNumber of WRITE errors: %d\n", readErrors, writeErrors);
+	//remove and detach shared array and remove shared memory and semaphores
 	shmdt(sharedArray);
 	shmctl(shrMemID, IPC_RMID, NULL);
 	msgctl(msgID, IPC_RMID, NULL);
 	semctl(intSemID, nBuffers, IPC_RMID);
 	
-	
-	printf("DONE WAITING\n");
-	
-
+	return 0;
 }
