@@ -1,7 +1,6 @@
 CS385HW2: Inter-Process Communications and Synchronization
 ==========================================================
-Name: Carlos Ortega
-netid: corteg20
+Name: cortega2
 
 Description
 -----------
